@@ -1,0 +1,13 @@
+// backend/src/main.ts
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  
+  // 🔥 İŞTE SİHİRLİ SATIR: CORS'U AÇIYORUZ
+  app.enableCors(); 
+
+  await app.listen(3333);
+}
+bootstrap();

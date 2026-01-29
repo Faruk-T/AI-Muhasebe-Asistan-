@@ -1,0 +1,62 @@
+{
+  "companies": [
+    {
+      "id": "1769470027641",
+      "name": "osman gültekin",
+      "taxNumber": "1475823698",
+      "address": "prrkdlfnögnlöcnglkfldfm",
+      "phone": "05346874512",
+      "email": "baba@gmail.com",
+      "createdAt": "2026-01-26T23:27:07.641Z"
+    }
+  ],
+  "employees": [
+    {
+      "id": "1769551944660",
+      "firstName": "Kemal",
+      "lastName": "Tazeoğlu",
+      "title": "Aşçı",
+      "phone": "05313543598",
+      "email": "kemal123@gmail.com",
+      "salary": 31000,
+      "createdAt": "2026-01-27T22:12:24.660Z"
+    },
+    {
+      "id": "1769552938532",
+      "firstName": "Nergiz",
+      "lastName": "Tazeoğlu",
+      "title": "Satış Müdürü",
+      "phone": "05389747516",
+      "email": "nergiz145@gmail.com",
+      "salary": 26000,
+      "createdAt": "2026-01-27T22:28:58.532Z"
+    }
+  ],
+  "products": [
+    {
+      "id": "1769513551808",
+      "name": "deneme",
+      "stock": "50",
+      "price": "20.000",
+      "vatRate": "10",
+      "createdAt": "2026-01-27T11:32:31.808Z"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "1769512574375",
+      "customer": {
+        "name": "Asude Holding"
+      },
+      "items": [
+        {
+          "productName": "rtgfdrgeb",
+          "quantity": 50,
+          "price": 2860
+        }
+      ],
+      "totalAmount": 2860,
+      "createdAt": "2026-01-27T11:16:14.375Z"
+    }
+  ]
+}
