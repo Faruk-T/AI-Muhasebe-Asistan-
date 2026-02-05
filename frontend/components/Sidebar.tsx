@@ -11,7 +11,10 @@ import {
   Building2, 
   ShieldCheck, 
   LogOut,
-  Wallet // ✨ YENİ: Cüzdan İkonunu ekledik
+  Wallet,
+  ShoppingCart,
+  Settings,
+  TrendingDown // 👈 Giderler için yeni ikon
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -27,10 +30,20 @@ export default function Sidebar() {
     },
     { 
       icon: <Receipt size={20} />, 
-      label: 'Faturalar', 
+      label: 'Satışlar & Faturalar', 
       href: '/invoices' 
     },
-    // ✨ YENİ: Finans Modülünü Buraya Ekledik
+    { 
+      icon: <ShoppingCart size={20} />, 
+      label: 'Satın Alma', 
+      href: '/purchases/create' 
+    },
+    // ✨ YENİ: Giderler Menüsü
+    { 
+      icon: <TrendingDown size={20} />, 
+      label: 'Giderler', 
+      href: '/expenses' 
+    },
     { 
       icon: <Wallet size={20} />, 
       label: 'Finans & Kasa', 
@@ -50,6 +63,11 @@ export default function Sidebar() {
       icon: <Users size={20} />, 
       label: 'Personeller', 
       href: '/employees' 
+    },
+    { 
+      icon: <Settings size={20} />, 
+      label: 'Firma Ayarları', 
+      href: '/settings' 
     },
     { 
       icon: <ShieldCheck size={20} />, 

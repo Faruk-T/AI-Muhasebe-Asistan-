@@ -3,214 +3,284 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, Save, ArrowLeft, Plus, Trash2, Building, Package } from 'lucide-react';
+import { Plus, Trash2, Save, ArrowLeft, User, Wallet, CheckCircle2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import Link from 'next/link';
 
 export default function CreateInvoicePage() {
   const router = useRouter();
-  const [companies, setCompanies] = useState([]);
-  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Form Ana Verisi
-  const [companyId, setCompanyId] = useState('');
+  // Veriler
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]); 
+
+  // Form State
+  const [selectedCompany, setSelectedCompany] = useState('');
   
-  // Kalemler (Satırlar)
-  const [items, setItems] = useState([
-    { productId: '', quantity: 1, price: 0 } 
+  // SATIRLARDA ARTIK KDV ORANINI DA TUTUYORUZ (vatRate)
+  const [invoiceItems, setInvoiceItems] = useState<any[]>([
+    { productId: '', quantity: 1, price: 0, vatRate: 0 } 
   ]);
+  
+  const [isPaid, setIsPaid] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState('');
 
   // Verileri Çek
   useEffect(() => {
-    fetch('http://localhost:3333/companies').then(res => res.json()).then(setCompanies);
-    fetch('http://localhost:3333/products').then(res => res.json()).then(setProducts);
+    Promise.all([
+      fetch('http://localhost:3333/companies').then(res => res.json()),
+      fetch('http://localhost:3333/products').then(res => res.json()),
+      fetch('http://localhost:3333/finance/accounts').then(res => res.json())
+    ]).then(([compData, prodData, accData]) => {
+      setCompanies(compData);
+      setProducts(prodData);
+      setAccounts(accData);
+      if(accData.length > 0) setSelectedAccount(accData[0].id);
+    });
   }, []);
 
-  // Ürün seçince fiyatı otomatik getir
+  // Ürün Seçilince Fiyat ve KDV'yi Getir
   const handleProductChange = (index: number, productId: string) => {
-    const product: any = products.find((p: any) => p.id === productId);
-    const newItems = [...items];
+    const product = products.find(p => p.id === productId);
+    const newItems = [...invoiceItems];
     newItems[index].productId = productId;
     
-    // 🛠️ DÜZELTME BURADA: salePrice yerine sellPrice yaptık
-    // Artık backend'den gelen doğru fiyatı alacak ve NaN hatası vermeyecek.
-    newItems[index].price = product ? Number(product.sellPrice || product.salePrice || 0) : 0;
+    if (product) {
+        newItems[index].price = Number(product.sellPrice);
+        newItems[index].vatRate = Number(product.vatRate || 0); // KDV Oranını Al
+    } else {
+        newItems[index].price = 0;
+        newItems[index].vatRate = 0;
+    }
     
-    setItems(newItems);
+    setInvoiceItems(newItems);
   };
 
-  // Miktar veya Fiyat değişince güncelle
   const handleItemChange = (index: number, field: string, value: any) => {
-    const newItems = [...items];
-    // @ts-ignore
+    const newItems = [...invoiceItems];
     newItems[index][field] = value;
-    setItems(newItems);
+    setInvoiceItems(newItems);
   };
 
-  // Satır Ekle / Sil
-  const addItem = () => setItems([...items, { productId: '', quantity: 1, price: 0 }]);
-  const removeItem = (index: number) => setItems(items.filter((_, i) => i !== index));
+  const addItem = () => setInvoiceItems([...invoiceItems, { productId: '', quantity: 1, price: 0, vatRate: 0 }]);
+  const removeItem = (index: number) => setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
 
-  // Toplam Hesaplama
-  const grandTotal = items.reduce((acc, item) => acc + (Number(item.quantity || 0) * Number(item.price || 0)), 0);
+  // GELİŞMİŞ HESAPLAMA (Ara Toplam, KDV, Genel Toplam)
+  const calculateTotals = () => {
+    let subTotal = 0; // KDV Hariç
+    let totalTax = 0; // Toplam KDV Tutarı
+    
+    invoiceItems.forEach(item => {
+        const qty = Number(item.quantity);
+        const prc = Number(item.price);
+        const vat = Number(item.vatRate);
 
+        const lineTotal = qty * prc; // KDV'siz Tutar
+        const tax = lineTotal * (vat / 100); // KDV Tutarı
+
+        subTotal += lineTotal;
+        totalTax += tax;
+    });
+
+    return {
+        subTotal,
+        totalTax,
+        grandTotal: subTotal + totalTax
+    };
+  };
+
+  const { subTotal, totalTax, grandTotal } = calculateTotals();
+
+  // KAYDET
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedCompany) return toast.error('Lütfen bir müşteri seçin.');
+    if (invoiceItems.some(i => !i.productId)) return toast.error('Lütfen tüm satırlarda ürün seçin.');
+    if (isPaid && !selectedAccount) return toast.error('Ödeme alındıysa kasa seçmelisiniz.');
+
     setLoading(true);
 
     try {
       const res = await fetch('http://localhost:3333/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, items }),
+        body: JSON.stringify({
+          companyId: selectedCompany,
+          items: invoiceItems,
+          type: 'SALES',
+          isPaid: isPaid,
+          accountId: isPaid ? selectedAccount : null
+        }),
       });
 
       if (res.ok) {
+        toast.success('Fatura başarıyla oluşturuldu! 🎉');
         router.push('/invoices');
-        router.refresh();
       } else {
-        alert('Hata oluştu!');
+        const err = await res.json();
+        toast.error(err.message || 'Hata oluştu.');
       }
     } catch {
-      alert('Sunucu hatası.');
+      toast.error('Sunucu hatası.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 py-12 px-4 relative overflow-hidden flex justify-center">
-      
-      {/* Background */}
-      <div className="absolute inset-0 bg-[size:40px_40px] bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] pointer-events-none"></div>
-
-      <div className="relative w-full max-w-4xl space-y-6">
+    <div className="min-h-screen bg-slate-950 p-8 text-white relative">
+      <div className="max-w-5xl mx-auto">
         
-        <Link href="/invoices" className="inline-flex items-center gap-2 text-indigo-400 hover:text-indigo-300 font-bold transition">
-          <ArrowLeft size={20} /> Listeye Dön
-        </Link>
+        <div className="flex items-center gap-4 mb-8">
+            <Link href="/invoices" className="p-2 bg-slate-800 rounded-xl hover:bg-slate-700 transition">
+                <ArrowLeft size={20}/>
+            </Link>
+            <h1 className="text-3xl font-black">Yeni Satış Faturası</h1>
+        </div>
 
-        <form onSubmit={handleSubmit} className="relative bg-slate-900/80 backdrop-blur-2xl border border-indigo-500/20 rounded-3xl p-8 shadow-2xl space-y-8">
-          
-          {/* Header */}
-          <div className="flex items-center gap-4 border-b border-white/10 pb-6">
-            <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/30">
-              <FileText size={28} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-black text-white">Yeni Fatura</h1>
-              <p className="text-slate-400">Müşteriyi seç ve ürünleri ekle.</p>
-            </div>
-          </div>
-
-          {/* Cari Seçimi */}
-          <div className="space-y-3">
-            <label className="text-sm font-bold text-indigo-300 flex items-center gap-2">
-               <Building size={16} /> Müşteri / Cari Seçimi
-            </label>
-            <select
-              required
-              className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-4 text-white focus:border-indigo-500 outline-none transition appearance-none"
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-            >
-              <option value="">-- Müşteri Seçiniz --</option>
-              {companies.map((c: any) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Fatura Kalemleri */}
-          <div className="space-y-4">
-             <div className="flex justify-between items-end">
-                <label className="text-sm font-bold text-indigo-300 flex items-center gap-2"><Package size={16}/> Ürünler & Hizmetler</label>
-                <button type="button" onClick={addItem} className="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                   <Plus size={14} /> Satır Ekle
-                </button>
-             </div>
-
-             <div className="space-y-3">
-               {items.map((item, index) => (
-                 <div key={index} className="flex flex-col md:flex-row gap-3 p-4 bg-slate-800/50 border border-slate-700 rounded-xl group hover:border-indigo-500/50 transition">
-                   {/* Ürün Seç */}
-                   <div className="flex-1">
-                      <select
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            {/* SOL KOLON */}
+            <div className="lg:col-span-2 space-y-6">
+                
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                        <User size={14}/> Müşteri Seçin
+                    </label>
+                    <select 
                         required
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-sm outline-none focus:border-indigo-500"
-                        value={item.productId}
-                        onChange={(e) => handleProductChange(index, e.target.value)}
-                      >
-                        <option value="">-- Ürün Seç --</option>
-                        {products.map((p: any) => (
-                          <option key={p.id} value={p.id}>{p.name} (Stok: {p.stock} {p.unit})</option>
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-4 text-white focus:border-indigo-500 outline-none"
+                        value={selectedCompany}
+                        onChange={e => setSelectedCompany(e.target.value)}
+                    >
+                        <option value="">Müşteri Seçiniz...</option>
+                        {companies.filter(c => c.type === 'CUSTOMER').map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
-                      </select>
-                   </div>
+                    </select>
+                </div>
 
-                   {/* Adet (Buçuklu giriş için step eklendi) */}
-                   <div className="w-full md:w-24">
-                      <input
-                        type="number" min="0" step="0.01"
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-sm outline-none focus:border-indigo-500 text-center"
-                        value={item.quantity}
-                        onChange={(e) => handleItemChange(index, 'quantity', Number(e.target.value))}
-                      />
-                   </div>
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg">Ürünler & Hizmetler</h3>
+                    </div>
 
-                   {/* Fiyat */}
-                   <div className="w-full md:w-32">
-                      <input
-                        type="number"
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-sm outline-none focus:border-indigo-500 text-right font-mono"
-                        value={item.price}
-                        onChange={(e) => handleItemChange(index, 'price', Number(e.target.value))}
-                      />
-                   </div>
+                    <div className="space-y-3">
+                        {invoiceItems.map((item, index) => (
+                            <div key={index} className="flex gap-3 items-start">
+                                <div className="flex-1">
+                                    <select 
+                                        required
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-sm focus:border-indigo-500 outline-none"
+                                        value={item.productId}
+                                        onChange={e => handleProductChange(index, e.target.value)}
+                                    >
+                                        <option value="">Ürün Seç...</option>
+                                        {products.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name} (Stok: {p.stock}, KDV: %{p.vatRate})</option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                   {/* Toplam & Sil */}
-                   <div className="flex items-center gap-4 justify-between md:justify-end w-full md:w-auto min-w-[120px]">
-                      <span className="font-bold text-indigo-300 font-mono">
-                        {(Number(item.quantity) * Number(item.price)).toLocaleString('tr-TR')} ₺
-                      </span>
-                      {items.length > 1 && (
-                        <button type="button" onClick={() => removeItem(index)} className="text-red-400 hover:text-red-300 p-2 hover:bg-red-500/20 rounded-lg transition">
-                           <Trash2 size={18} />
-                        </button>
-                      )}
-                   </div>
-                 </div>
-               ))}
-             </div>
-          </div>
+                                <div className="w-24">
+                                    <input 
+                                        type="number" min="1" required
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-sm text-center focus:border-indigo-500 outline-none"
+                                        value={item.quantity}
+                                        onChange={e => handleItemChange(index, 'quantity', e.target.value)}
+                                    />
+                                </div>
 
-          {/* Genel Toplam */}
-          <div className="flex justify-end pt-6 border-t border-white/10">
-             <div className="bg-indigo-900/40 p-6 rounded-2xl border border-indigo-500/30 text-right min-w-[250px]">
-                <p className="text-indigo-300 text-sm font-bold mb-1">GENEL TOPLAM</p>
-                <p className="text-4xl font-black text-white">{grandTotal.toLocaleString('tr-TR')} ₺</p>
-             </div>
-          </div>
+                                <div className="w-32">
+                                    <div className="relative">
+                                        <input 
+                                            type="number" min="0" step="0.01" required
+                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-sm text-right focus:border-indigo-500 outline-none"
+                                            value={item.price}
+                                            onChange={e => handleItemChange(index, 'price', e.target.value)}
+                                        />
+                                        <span className="absolute right-8 top-3 text-slate-500 text-xs">₺</span>
+                                    </div>
+                                </div>
 
-          {/* Kaydet Butonu */}
-          <button
-            disabled={loading}
-            type="submit"
-            className="w-full group relative py-4 rounded-xl font-bold text-white overflow-hidden transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 bg-[length:200%_auto] animate-gradient"></div>
-            <div className="relative flex items-center justify-center gap-2">
-               {loading ? 'Kaydediliyor...' : <><Save /> Faturayı Onayla ve Kaydet</>}
+                                {invoiceItems.length > 1 && (
+                                    <button type="button" onClick={() => removeItem(index)} className="p-3 text-red-400 hover:bg-red-500/10 rounded-xl transition">
+                                        <Trash2 size={18}/>
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <button type="button" onClick={addItem} className="mt-4 flex items-center gap-2 text-indigo-400 font-bold text-sm hover:text-indigo-300 transition">
+                        <Plus size={16}/> Başka Satır Ekle
+                    </button>
+                </div>
+
             </div>
-          </button>
 
+            {/* SAĞ KOLON: Özet */}
+            <div className="space-y-6">
+                
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-4 flex items-center gap-2">
+                        <Wallet size={14}/> Ödeme Durumu
+                    </label>
+                    
+                    <div className="flex bg-slate-800 p-1 rounded-xl mb-4">
+                        <button type="button" onClick={() => setIsPaid(false)} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${!isPaid ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>
+                            Veresiye
+                        </button>
+                        <button type="button" onClick={() => setIsPaid(true)} className={`flex-1 py-2 rounded-lg font-bold text-sm transition ${isPaid ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>
+                            Peşin
+                        </button>
+                    </div>
+
+                    {isPaid && (
+                        <div className="animate-in fade-in slide-in-from-top-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Kasa Seçimi</label>
+                            <select 
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none"
+                                value={selectedAccount}
+                                onChange={e => setSelectedAccount(e.target.value)}
+                            >
+                                {accounts.map(a => (
+                                    <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString('tr-TR')} ₺)</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+                    <div className="flex justify-between items-center mb-2 text-slate-400">
+                        <span>Ara Toplam (KDV Hariç)</span>
+                        <span>{subTotal.toLocaleString('tr-TR')} ₺</span>
+                    </div>
+                    {/* ARTIK KDV DOĞRU HESAPLANIYOR */}
+                    <div className="flex justify-between items-center mb-6 text-emerald-400 font-bold">
+                        <span>Toplam KDV</span>
+                        <span>+ {totalTax.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                    </div>
+                    <div className="border-t border-slate-800 pt-4 flex justify-between items-center mb-6">
+                        <span className="font-bold text-xl">GENEL TOPLAM</span>
+                        <span className="font-black text-2xl text-indigo-400">{grandTotal.toLocaleString('tr-TR')} ₺</span>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        disabled={loading}
+                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-indigo-600/20 transition hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                        {loading ? 'İşleniyor...' : <><Save size={20}/> Faturayı Oluştur</>}
+                    </button>
+                </div>
+
+            </div>
         </form>
       </div>
-      
-      <style jsx>{`
-        @keyframes gradient { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        .animate-gradient { animation: gradient 3s ease infinite; }
-      `}</style>
     </div>
   );
 }

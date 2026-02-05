@@ -26,7 +26,7 @@ export default function EditCompanyPage() {
 
   // Verileri Çek
   useEffect(() => {
-    fetch(`http://localhost:3000/companies/${id}`)
+    fetch(`http://localhost:3333/companies/${id}`)
       .then(res => {
         if (!res.ok) throw new Error('Şirket bulunamadı');
         return res.json();

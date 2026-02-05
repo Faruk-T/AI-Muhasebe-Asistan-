@@ -20,9 +20,9 @@ model Company {
   email     String?
   balance   Decimal  @default(0) // + Alacak, - Borç
   
-  // Şirket silinirse bunlari da sil (Cascade)
+  // İlişkiler
   invoices     Invoice[]
-  transactions Transaction[] // Şirkete bağlı hareketler
+  transactions Transaction[] 
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -30,33 +30,28 @@ model Company {
 
 // 📦 ÜRÜNLER
 model Product {
-  id          String   @id @default(uuid())
-  name        String
-  barcode     String?  // Barkod opsiyonel olsun
-  stock       Float    @default(0) // 1.5 kg vb.
-  unit        String   @default("Adet") // Kg, Adet, Koli...
-  buyPrice    Decimal
-  sellPrice   Decimal
-  criticalQty Int      @default(10)
-  
-  // ✅ YENİ EKLENEN KDV ALANI
-  vatRate     Int      @default(20) 
+  id           String   @id @default(uuid())
+  name         String
+  barcode      String?
+  stock        Float    @default(0)
+  unit         String   @default("Adet")
+  buyPrice     Decimal
+  sellPrice    Decimal
+  criticalQty  Int      @default(10)
+  vatRate      Int      @default(20) 
 
-  licenseKey  String?  // SaaS için eklemiştik (Opsiyonel)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  licenseKey   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
   
-  // İlişkiler...
   invoiceItems InvoiceItem[]
 }
 
 // 🧾 FATURALAR
 model Invoice {
   id          String   @id @default(uuid())
-  type        String   @default("SALES")
-  
-  // Fatura Durumu
-  status      String   @default("PENDING") // PENDING (Bekliyor) veya PAID (Ödendi)
+  type        String   @default("SALES") // SALES veya PURCHASE
+  status      String   @default("PENDING") // PENDING veya PAID
 
   companyId   String
   company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -70,17 +65,17 @@ model Invoice {
   updatedAt   DateTime @updatedAt
 }
 
-// 📝 FATURA KALEMLERİ (Satırlar)
+// 📝 FATURA KALEMLERİ
 model InvoiceItem {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   
   invoiceId String
-  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   
   productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   
-  quantity  Float   // Ondalıklı adet olabilir (1.5 kg)
+  quantity  Float
   price     Decimal
   total     Decimal
 }
@@ -99,64 +94,103 @@ model Employee {
   updatedAt DateTime @updatedAt
 } 
 
-// 🔑 LİSANSLAR (Yeni Model - Dışarıda olmalı)
+// 🔑 LİSANSLAR
 model License {
   id        String   @id @default(uuid())
-  key       String   @unique  // Lisans Anahtarı
-  owner     String            // Kime ait?
+  key       String   @unique
+  owner     String
   isActive  Boolean  @default(true)
-  
-  expiresAt DateTime?         // Kiralama bitiş tarihi
-
+  expiresAt DateTime?
   createdAt DateTime @default(now())
 }
 
-// 💰 1. KASA & BANKA HESAPLARI
+// 💰 KASA & BANKA HESAPLARI
 model FinancialAccount {
   id        String        @id @default(uuid())
-  name      String        // Örn: "Merkez Kasa", "Ziraat Bankası", "Patron Cebi"
-  type      AccountType   @default(CASH) // Kasa mı, Banka mı?
-  balance   Decimal       @default(0) // Şu an içinde ne kadar para var?
-  currency  String        @default("TRY") // TL, USD, EUR
-  iban      String?       // Banka ise IBAN yazılır
+  name      String        // Örn: "Merkez Kasa", "Ziraat Bankası"
+  type      AccountType   @default(CASH)
+  balance   Decimal       @default(0)
+  currency  String        @default("TRY")
+  iban      String?       
   
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
   // İlişkiler
   transactions Transaction[]
+  expenses     Expense[]     // Giderler buraya bağlanır
 }
 
-// 💸 2. PARA HAREKETLERİ (BİRLEŞTİRİLDİ VE GÜÇLENDİRİLDİ)
+// 💸 PARA HAREKETLERİ (Tahsilat/Ödeme)
 model Transaction {
   id          String           @id @default(uuid())
-  amount      Decimal          // Tutar
-  type        TransactionType  // GELİR (INCOME) mi GİDER (EXPENSE) mi?
-  description String?          // Açıklama: "Fatura No #123 Tahsilatı"
-  category    String?          // Örn: "Satış", "Kira", "Maaş", "Yemek"
+  amount      Decimal
+  type        TransactionType
+  description String?
+  category    String?
   date        DateTime         @default(now())
 
-  // İSTEĞE BAĞLI İLİŞKİLER (Opsiyonel)
-  // 1. Hangi kasaya girdi/çıktı? (Zorunlu değil, belki sadece cari hareketi?)
+  // Hangi kasaya/bankaya bağlı?
   account     FinancialAccount? @relation(fields: [accountId], references: [id])
   accountId   String?
 
-  // 2. Hangi firmayla ilgili? (Opsiyonel - Maaş ödemesinde firma olmaz)
+  // Hangi firmayla ilgili?
   company     Company?          @relation(fields: [companyId], references: [id])
   companyId   String?
 
   createdAt   DateTime         @default(now())
 }
 
-// 📌 SEÇENEKLER (ENUMS)
+// ⚙️ GENEL AYARLAR
+model Settings {
+  id          String   @id @default(uuid())
+  companyName String
+  address     String?
+  phone       String?
+  email       String?
+  taxId       String?
+  iban        String?
+  logoUrl     String?
+  terms       String?
+  
+  updatedAt   DateTime @updatedAt
+}
+
+// 📂 GİDER KATEGORİLERİ
+model ExpenseCategory {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+}
+
+// 🧾 GİDERLER (Genel Harcamalar)
+model Expense {
+  id          String   @id @default(uuid())
+  description String
+  amount      Float
+  date        DateTime @default(now())
+  
+  // Kategori İlişkisi
+  categoryId  String
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
+
+  // Kasa/Banka İlişkisi (Doğru model ismi FinancialAccount olarak düzeltildi)
+  accountId   String
+  account     FinancialAccount @relation(fields: [accountId], references: [id])
+
+  createdAt   DateTime @default(now())
+}
+
+// 📌 ENUMLAR
 enum AccountType {
-  CASH  // Nakit Kasa
-  BANK  // Banka Hesabı
-  POS   // Sanal Pos / Kredi Kartı
+  CASH
+  BANK
+  POS
 }
 
 enum TransactionType {
-  INCOME   // Para Girişi (+)
-  EXPENSE  // Para Çıkışı (-)
-  TRANSFER // Virman (Kasadan Bankaya)
+  INCOME
+  EXPENSE
+  TRANSFER
 }

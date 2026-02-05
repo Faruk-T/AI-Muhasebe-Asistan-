@@ -1,3 +1,4 @@
+// backend/src/products/products.service.ts
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -11,13 +12,15 @@ export class ProductsService {
       data: {
         name: createProductDto.name,
         barcode: createProductDto.barcode,
+        unit: createProductDto.unit || 'Adet',
         // Frontend'den string gelse bile Number'a çevirip garantiye alıyoruz
-        buyPrice: Number(createProductDto.buyPrice),
-        sellPrice: Number(createProductDto.salePrice),
-        stock: Number(createProductDto.stock),
+        buyPrice: Number(createProductDto.buyPrice || 0),
+        // salePrice veya sellPrice hangisi gelirse onu al
+        sellPrice: Number(createProductDto.salePrice || createProductDto.sellPrice || 0),
+        stock: Number(createProductDto.stock || 0),
         criticalQty: Number(createProductDto.criticalQty || 10),
         
-        // ✅ İŞTE KDV BURADA (Varsayılan %20)
+        // ✅ KDV (Varsayılan %20)
         vatRate: Number(createProductDto.vatRate || 20),
       },
     });
@@ -39,14 +42,29 @@ export class ProductsService {
 
   // 4. ÜRÜN GÜNCELLE
   async update(id: string, updateProductDto: any) {
-    // Güncelleme verilerini hazırla ve sayısal alanları kontrol et
-    const data: any = { ...updateProductDto };
+    // Güncelleme verilerini kopyala
+    const data = { ...updateProductDto };
 
-    if (data.buyPrice) data.buyPrice = Number(data.buyPrice);
-    if (data.salePrice) data.salePrice = Number(data.salePrice);
-    if (data.stock) data.stock = Number(data.stock);
-    if (data.criticalQty) data.criticalQty = Number(data.criticalQty);
-    if (data.vatRate) data.vatRate = Number(data.vatRate);
+    // 🛠️ KRİTİK DÜZELTME: salePrice gelirse sellPrice'a çevir
+    // Prisma şemasında sütun adı 'sellPrice' olduğu için 'salePrice' hata verir.
+    if (data.salePrice !== undefined) {
+      data.sellPrice = Number(data.salePrice);
+      delete data.salePrice; // Prisma'ya göndermeden önce siliyoruz
+    }
+
+    // Sayısal alanları dönüştür
+    if (data.buyPrice !== undefined) data.buyPrice = Number(data.buyPrice);
+    if (data.sellPrice !== undefined) data.sellPrice = Number(data.sellPrice);
+    if (data.stock !== undefined) data.stock = Number(data.stock);
+    if (data.criticalQty !== undefined) data.criticalQty = Number(data.criticalQty);
+    if (data.vatRate !== undefined) data.vatRate = Number(data.vatRate);
+
+    // ID, createdAt, updatedAt gibi alanları veriden çıkaralım (Prisma bazen kızar)
+    delete data.id;
+    delete data.createdAt;
+    delete data.updatedAt;
+    delete data.invoiceItems; // İlişkisel alanları güncelleme verisinden çıkar
+    delete data.licenseKey;   // Değiştirilmesini istemiyorsan çıkar
 
     return this.prisma.product.update({
       where: { id },

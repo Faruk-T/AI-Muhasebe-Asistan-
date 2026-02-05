@@ -1,4 +1,5 @@
-// backend/src/dashboard/dashboard.service.ts
+// Backend/src/dashboard/dashboard.service.ts
+
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -6,55 +7,93 @@ import { PrismaService } from '../prisma/prisma.service';
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
-  async getStats() {
-    // 1. TOPLAM KASA VARLIĞI (Tüm hesaplardaki paraların toplamı)
-    const totalCash = await this.prisma.financialAccount.aggregate({
-      _sum: { balance: true },
-    });
+  async getSummary() {
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-    // 2. TOPLAM ALACAK (Müşterilerin bize borcu)
-    const totalReceivables = await this.prisma.company.aggregate({
-      where: { type: 'CUSTOMER', balance: { gt: 0 } }, // Bakiyesi 0'dan büyük olan müşteriler
-      _sum: { balance: true },
-    });
+    console.log("--- DASHBOARD ANALİZİ BAŞLIYOR ---");
+    console.log("Tarih Başlangıcı:", startOfMonth);
 
-    // 3. TOPLAM BORÇ (Tedarikçilere borcumuz - Opsiyonel)
-    const totalPayables = await this.prisma.company.aggregate({
-      where: { type: 'SUPPLIER', balance: { lt: 0 } }, // Bakiyesi 0'dan küçük olanlar (Biz borçluyuz)
-      _sum: { balance: true },
-    });
+    // 1. TOPLAM KASA VARLIĞI
+    const accounts = await this.prisma.financialAccount.findMany();
+    const totalAsset = accounts.reduce((acc, item) => acc + Number(item.balance), 0);
+    
+    console.log(`Bulunan Kasa Sayısı: ${accounts.length}`);
+    console.log("Kasalar:", accounts); // Kasaların içinde para var mı görelim
+    console.log(`Hesaplanan Toplam Varlık: ${totalAsset}`);
 
-    // 4. 👷‍♂️ AYLIK PERSONEL GİDERİ (Maaş Yükü)
-    const totalSalaries = await this.prisma.employee.aggregate({
-      _sum: { salary: true },
+    // 2. BU AYKİ SATIŞLAR (FATURALAR)
+    const monthlySales = await this.prisma.invoice.aggregate({
+      where: {
+        type: 'SALES',
+        createdAt: { gte: startOfMonth },
+      },
+      _sum: { totalAmount: true },
     });
+    console.log("Bu ayki Satış Toplamı:", monthlySales._sum.totalAmount);
 
-    // 5. KRİTİK STOK UYARILARI (Stok < Kritik Miktar olanlar)
-    const allProducts = await this.prisma.product.findMany({
-      select: { id: true, name: true, stock: true, criticalQty: true, unit: true },
+    // 3. BU AYKİ GİDERLER
+    const monthlyExpenses = await this.prisma.expense.aggregate({
+      where: {
+        date: { gte: startOfMonth },
+      },
+      _sum: { amount: true },
     });
     
-    const lowStockProducts = allProducts.filter(p => p.stock <= p.criticalQty);
-
-    // 6. SON 5 İŞLEM (Hızlı Bakış)
-    const recentTransactions = await this.prisma.transaction.findMany({
-      take: 5,
-      orderBy: { date: 'desc' },
-      include: { account: true }, // Hangi hesaptan olduğunu görelim
+    // 4. BU AYKİ ALIMLAR
+    const monthlyPurchases = await this.prisma.invoice.aggregate({
+      where: {
+        type: 'PURCHASE',
+        createdAt: { gte: startOfMonth },
+      },
+      _sum: { totalAmount: true },
     });
 
-    // Hepsini tek bir obje olarak döndür
+    // 5. ALACAK & BORÇ HESAPLAMA
+    const companies = await this.prisma.company.findMany();
+    let totalReceivables = 0; 
+    let totalPayables = 0;    
+
+    companies.forEach(comp => {
+        const bal = Number(comp.balance);
+        if (bal > 0) {
+            totalReceivables += bal; 
+        } else {
+            totalPayables += Math.abs(bal);
+        }
+    });
+
+    console.log(`Toplam Cari Sayısı: ${companies.length}`);
+    console.log(`Hesaplanan Alacak: ${totalReceivables}, Hesaplanan Borç: ${totalPayables}`);
+
+    // 6. KRİTİK STOK
+    const criticalStock = await this.prisma.product.findMany({
+        where: { stock: { lte: 10 } },
+        take: 5,
+        orderBy: { stock: 'asc' }
+    });
+
+    // 7. SON İŞLEMLER
+    const recentTransactions = await this.prisma.transaction.findMany({
+        take: 5,
+        orderBy: { date: 'desc' },
+        include: { company: true, account: true }
+    });
+
+    const income = Number(monthlySales._sum.totalAmount || 0);
+    const expense = Number(monthlyExpenses._sum.amount || 0);
+    const cost = Number(monthlyPurchases._sum.totalAmount || 0);
+    const netProfit = income - (expense + cost);
+
     return {
-      totalCash: totalCash._sum.balance || 0,
-      totalReceivables: totalReceivables._sum.balance || 0,
-      totalPayables: Math.abs(Number(totalPayables._sum.balance || 0)), // Eksiyi artı gösterelim
-      
-      // 👇 DÜZELTME BURADA: Decimal'i Number'a çevirdik
-      monthlyEmployeeCost: Number(totalSalaries._sum.salary) || 0, 
-      
-      lowStockCount: lowStockProducts.length,
-      lowStockItems: lowStockProducts.slice(0, 5), // Sadece ilk 5 tanesini gösterelim
-      recentTransactions,
+      totalAsset,
+      monthlySales: income,
+      monthlyExpenses: expense + cost,
+      netProfit,
+      totalReceivables,
+      totalPayables,
+      criticalStock: criticalStock || [],
+      recentTransactions: recentTransactions || []
     };
   }
 }
