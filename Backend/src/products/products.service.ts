@@ -1,81 +1,90 @@
-// backend/src/products/products.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
-  // 1. YENİ ÜRÜN OLUŞTUR
-  async create(createProductDto: any) {
+  // 📦 1. YENİ ÜRÜN OLUŞTUR (Gelişmiş Barkod & Stok Yönetimi)
+  async create(dto: any) {
     return this.prisma.product.create({
       data: {
-        name: createProductDto.name,
-        barcode: createProductDto.barcode,
-        unit: createProductDto.unit || 'Adet',
-        // Frontend'den string gelse bile Number'a çevirip garantiye alıyoruz
-        buyPrice: Number(createProductDto.buyPrice || 0),
-        // salePrice veya sellPrice hangisi gelirse onu al
-        sellPrice: Number(createProductDto.salePrice || createProductDto.sellPrice || 0),
-        stock: Number(createProductDto.stock || 0),
-        criticalQty: Number(createProductDto.criticalQty || 10),
+        code: dto.code || null,
+        name: dto.name,
+        barcode: dto.barcode || null, // 🚀 Ana Barkod Alanı
+        unit: dto.unit || 'Adet',
+        buyPrice: Number(dto.buyPrice || 0),
+        sellPrice: Number(dto.sellPrice || 0),
+        stock: Number(dto.stock || 0), // 🚀 Stok Girişi Garantiye Alındı
+        vatRate: Number(dto.vatRate || 20),
+        criticalQty: Number(dto.criticalQty || 10),
+        shelfAddress: dto.shelfAddress || null,
         
-        // ✅ KDV (Varsayılan %20)
-        vatRate: Number(createProductDto.vatRate || 20),
+        // Gruplama
+        categoryId: dto.categoryId || null,
+        brandId: dto.brandId || null,
+
+        // Muhasebe Entegrasyonu
+        accountStockCode: dto.accountStockCode || '153.01',
+        accountSalesCode: dto.accountSalesCode || '600.01',
+        accountCostCode: dto.accountCostCode || '621.01',
+
+        // 🏷️ 011500 - Barkod Tanıtım Kartı İçin Otomatik İlk Kayıt
+        barcodes: dto.barcode ? {
+          create: [{ code: dto.barcode, type: 'Varsayılan' }]
+        } : undefined
       },
+      include: { barcodes: true, category: true, brand: true }
     });
   }
 
-  // 2. TÜM ÜRÜNLERİ GETİR
+  // 🔍 2. TÜMÜNÜ GETİR
   async findAll() {
     return this.prisma.product.findMany({
-      orderBy: { createdAt: 'desc' }, // En yeni eklenen en üstte
+      include: { category: true, brand: true, barcodes: true },
+      orderBy: { createdAt: 'desc' }
     });
   }
 
-  // 3. TEK BİR ÜRÜN GETİR
+  // 🔎 3. TEK ÜRÜN GETİR
   async findOne(id: string) {
-    return this.prisma.product.findUnique({
+    const product = await this.prisma.product.findUnique({
       where: { id },
+      include: { category: true, brand: true, barcodes: true }
     });
+    if (!product) throw new NotFoundException('Ürün bulunamadı');
+    return product;
   }
 
-  // 4. ÜRÜN GÜNCELLE
-  async update(id: string, updateProductDto: any) {
-    // Güncelleme verilerini kopyala
-    const data = { ...updateProductDto };
+  // ⚙️ 4. GÜNCELLE
+  async update(id: string, dto: any) {
+    const { id: _, createdAt, updatedAt, category, brand, barcodes, ...cleanData } = dto;
 
-    // 🛠️ KRİTİK DÜZELTME: salePrice gelirse sellPrice'a çevir
-    // Prisma şemasında sütun adı 'sellPrice' olduğu için 'salePrice' hata verir.
-    if (data.salePrice !== undefined) {
-      data.sellPrice = Number(data.salePrice);
-      delete data.salePrice; // Prisma'ya göndermeden önce siliyoruz
-    }
-
-    // Sayısal alanları dönüştür
-    if (data.buyPrice !== undefined) data.buyPrice = Number(data.buyPrice);
-    if (data.sellPrice !== undefined) data.sellPrice = Number(data.sellPrice);
-    if (data.stock !== undefined) data.stock = Number(data.stock);
-    if (data.criticalQty !== undefined) data.criticalQty = Number(data.criticalQty);
-    if (data.vatRate !== undefined) data.vatRate = Number(data.vatRate);
-
-    // ID, createdAt, updatedAt gibi alanları veriden çıkaralım (Prisma bazen kızar)
-    delete data.id;
-    delete data.createdAt;
-    delete data.updatedAt;
-    delete data.invoiceItems; // İlişkisel alanları güncelleme verisinden çıkar
-    delete data.licenseKey;   // Değiştirilmesini istemiyorsan çıkar
+    // Sayısal alan dönüşümleri
+    const numericFields = ['buyPrice', 'sellPrice', 'stock', 'criticalQty', 'vatRate'];
+    numericFields.forEach(field => {
+      if (cleanData[field] !== undefined) cleanData[field] = Number(cleanData[field]);
+    });
 
     return this.prisma.product.update({
       where: { id },
-      data: data,
+      data: {
+        ...cleanData,
+        // Barkod güncellenirse ana tablo alanını güncelle
+        barcode: cleanData.barcode || undefined,
+      }
     });
   }
 
-  // 5. ÜRÜN SİL
+  // 🗑️ 5. SİL
   async remove(id: string) {
-    return this.prisma.product.delete({
-      where: { id },
-    });
+    try {
+      const exists = await this.prisma.product.findUnique({ where: { id } });
+      if (!exists) return { success: false, message: 'Ürün bulunamadı.' };
+      await this.prisma.product.delete({ where: { id } });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: "Silinemedi." };
+    }
   }
 }

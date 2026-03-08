@@ -16,12 +16,14 @@ import { SettingsModule } from './settings/settings.module';
 import { ExpenseCategoriesModule } from './expense-categories/expense-categories.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { OffersModule } from './offers/offers.module';
+import { CategoriesModule } from './categories/categories.module';
+import { BrandsModule } from './brands/brands.module';
 
 @Module({
   imports: [
     PrismaModule,     // Veritabanı (Global)
     CustomersModule,  // Müşteriler
-    CompaniesModule, EmployeesModule, ProductsModule, InvoicesModule, TransactionsModule, FinanceModule, DashboardModule, SettingsModule, ExpenseCategoriesModule, ExpensesModule, OffersModule,  // Şirketler (Sadece 1 kere yazılmalı!)
+    CompaniesModule, EmployeesModule, ProductsModule, InvoicesModule, TransactionsModule, FinanceModule, DashboardModule, SettingsModule, ExpenseCategoriesModule, ExpensesModule, OffersModule, CategoriesModule, BrandsModule,  // Şirketler (Sadece 1 kere yazılmalı!)
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

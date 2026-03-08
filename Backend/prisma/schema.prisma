@@ -1,5 +1,3 @@
-// backend/prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,184 +7,245 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 🏢 ŞİRKETLER (Cari Hesaplar - Müşteri & Tedarikçi Firmalar)
+// 🏢 ŞİRKETLER (Cari Hesaplar)
 model Company {
-  id        String   @id @default(uuid())
-  name      String
-  type      String   // CUSTOMER veya SUPPLIER
-  taxNumber String?
-  address   String?
-  phone     String?
-  email     String?
-  balance   Decimal  @default(0) // + Alacak, - Borç
-   
-  // İlişkiler
-  invoices     Invoice[]
-  transactions Transaction[] 
-  offers       Offer[]       // Şirkete verilen teklifler
-  customers    Customer[]    // Şirket altındaki yetkili kişiler/müşteriler
-   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// 👤 MÜŞTERİLER (Bireysel Müşteriler veya Firma Yetkilileri)
-// HATA ÇÖZÜMÜ: Bu model eksik olduğu için hata alıyordun.
-model Customer {
-  id        String   @id @default(uuid())
-  name      String   // Ad Soyad
-  email     String?
-  phone     String?
-  address   String?
-  taxId     String?  // TC Kimlik No
-  
-  // Bir şirkete bağlı çalışıyor olabilir (Opsiyonel)
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id])
-
-  // İlişkiler
-  offers    Offer[]   // Müşteriye verilen teklifler
-  invoices  Invoice[] // Müşteriye kesilen faturalar
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// 📦 ÜRÜNLER
-model Product {
-  id           String   @id @default(uuid())
+  id           String        @id @default(uuid())
   name         String
-  barcode      String?
-  stock        Float    @default(0)
-  unit         String   @default("Adet")
-  buyPrice     Decimal
-  sellPrice    Decimal
-  criticalQty  Int      @default(10)
-  vatRate      Int      @default(20) 
+  type         String        // CUSTOMER veya SUPPLIER
+  taxNumber    String?
+  address      String?
+  phone        String?
+  email        String?
+  balance      Decimal       @default(0)
+  invoices     Invoice[]
+  transactions Transaction[]
+  offers       Offer[]
+  customers    Customer[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
 
-  licenseKey   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-   
-  invoiceItems InvoiceItem[]
-  offerItems   OfferItem[]   // Tekliflerde kullanılan ürünler
+// 👤 MÜŞTERİLER
+model Customer {
+  id        String    @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  taxId     String?
+  companyId String?
+  company   Company?  @relation(fields: [companyId], references: [id])
+  offers    Offer[]
+  invoices  Invoice[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// 📦 ÜRÜNLER (ERP Geliştirmeleri Dahil)
+model Product {
+  id                String   @id @default(uuid())
+  code              String?  @unique // 011300 - Migration hatası almamak için opsiyonel yaptık
+  name              String
+  barcode           String?  // Eski verilerin için duruyor
+  stock             Float    @default(0) // Eski verilerin için duruyor
+  unit              String   @default("Adet")
+  vatRate           Int      @default(20)
+  buyPrice          Decimal
+  sellPrice         Decimal
+  criticalQty       Int      @default(10)
+  licenseKey        String?
+
+  // Madde 1.2: Çoklu Fiyat Listeleri
+  prices            ProductPrice[]
+
+  // Madde 2.1 - 2.8: Grup Tanımları
+  categoryId        String?
+  category          Category? @relation(fields: [categoryId], references: [id])
+  brandId           String?
+  brand             Brand?    @relation(fields: [brandId], references: [id])
+  manufacturerId    String?
+  manufacturer      Manufacturer? @relation(fields: [manufacturerId], references: [id])
+  sector            String?   
+  
+  // Madde 2.5: Muhasebe Entegrasyonu
+  accountStockCode  String?   
+  accountSalesCode  String?   
+  accountCostCode   String?   
+
+  // Madde 1.5, 1.7, 1.8, 2.10: Takip ve Depo
+  barcodes          Barcode[]
+  lots              ProductLot[]
+  serialNumbers     SerialNumber[]
+  warehouseDetails  ProductWarehouse[]
+  shelfAddress      String?   
+  
+  // Madde 2.6: Ambalaj
+  weight            Float?    
+  volume            Float?    
+  
+  // Madde 1.3: Alternatifler
+  alternatives      ProductAlternative[] @relation("MainProduct")
+  alternativeOf     ProductAlternative[] @relation("AltProduct")
+
+  // Madde 2.8: Varyantlar
+  variants          ProductVariant[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  invoiceItems      InvoiceItem[]
+  offerItems        OfferItem[]
+}
+
+// --- ERP YAN TABLOLAR ---
+model ProductPrice {
+  id         String  @id @default(uuid())
+  productId  String
+  priceName  String  // Toptan, Perakende vb.
+  amount     Decimal
+  currency   String  @default("TRY")
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model Barcode {
+  id        String  @id @default(uuid())
+  code      String  @unique
+  type      String  @default("Adet")
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductLot {
+  id         String   @id @default(uuid())
+  lotNumber  String   
+  expiryDate DateTime?
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+}
+
+model SerialNumber {
+  id             String  @id @default(uuid())
+  serialNumber   String  @unique
+  isSold         Boolean @default(false)
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+}
+
+model ProductWarehouse {
+  id          String  @id @default(uuid())
+  productId   String
+  warehouseId String
+  quantity    Float   @default(0)
+  minLevel    Float   @default(0)
+  maxLevel    Float   @default(0)
+  product     Product @relation(fields: [productId], references: [id])
+}
+
+model ProductAlternative {
+  id            String  @id @default(uuid())
+  productId     String
+  alternativeId String
+  mainProduct   Product @relation("MainProduct", fields: [productId], references: [id])
+  altProduct    Product @relation("AltProduct", fields: [alternativeId], references: [id])
+}
+
+model ProductVariant {
+  id        String  @id @default(uuid())
+  type      String  // Renk, Beden vb.
+  value     String  
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String     
+  parentId  String?
+  parent    Category?  @relation("SubCategory", fields: [parentId], references: [id])
+  children  Category[] @relation("SubCategory")
+  products  Product[]
+}
+
+model Brand {
+  id       String    @id @default(uuid())
+  name     String    
+  products Product[]
+}
+
+model Manufacturer {
+  id       String    @id @default(uuid())
+  name     String    
+  products Product[]
 }
 
 // 🧾 FATURALAR
 model Invoice {
-  id          String   @id @default(uuid())
-  type        String   @default("SALES") // SALES veya PURCHASE
-  status      String   @default("PENDING") // PENDING veya PAID
-
-  companyId   String?  // Firma ID'si (Opsiyonel olabilir)
-  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  customerId  String?  // Bireysel Müşteri ID'si (Opsiyonel)
-  customer    Customer? @relation(fields: [customerId], references: [id])
-   
-  totalAmount Decimal  @default(0)
-  date        DateTime @default(now())
-   
+  id          String        @id @default(uuid())
+  type        String        @default("SALES")
+  status      String        @default("PENDING")
+  companyId   String?
+  company     Company?      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customerId  String?
+  customer    Customer?     @relation(fields: [customerId], references: [id])
+  totalAmount Decimal       @default(0)
+  date        DateTime      @default(now())
   items       InvoiceItem[]
-   
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 }
 
-// 📝 FATURA KALEMLERİ
 model InvoiceItem {
-  id        String   @id @default(uuid())
-   
+  id        String  @id @default(uuid())
   invoiceId String
-  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-   
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-   
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity  Float
   price     Decimal
   total     Decimal
 }
 
-// 1. 📄 TEKLİF (OFFER) MODELİ
 model Offer {
   id          String      @id @default(uuid())
-  
-  companyId   String?     // Teklif verilen şirket (Opsiyonel)
+  companyId   String?
   company     Company?    @relation(fields: [companyId], references: [id])
-  
-  customerId  String?     // Teklifin verildiği kişi/müşteri (Opsiyonel)
+  customerId  String?
   customer    Customer?   @relation(fields: [customerId], references: [id])
-  
-  totalAmount Float       // Toplam Tutar
-  currency    String      @default("TRY") // Para birimi (TRY, USD, EUR)
-  status      String      @default("DRAFT") // DRAFT, SENT, ACCEPTED, REJECTED, CONVERTED
-  validUntil  DateTime?   // Teklifin geçerlilik tarihi
-  note        String?     // Müşteriye not
-  
-  items       OfferItem[] // Teklif kalemleri
-
+  totalAmount Float
+  currency    String      @default("TRY")
+  status      String      @default("DRAFT")
+  validUntil  DateTime?
+  note        String?
+  items       OfferItem[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 }
 
-// 2. 📎 TEKLİF KALEMLERİ (OFFER ITEMS)
 model OfferItem {
   id        String  @id @default(uuid())
   offerId   String
   offer     Offer   @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  
   productId String
   product   Product @relation(fields: [productId], references: [id])
-  
   quantity  Int
   price     Float
-  vatRate   Float   @default(20) // KDV Oranı (Güncel oran %20)
+  vatRate   Float   @default(20)
   total     Float
 }
 
-// 👥 PERSONELLER
-model Employee {
-  id        String   @id @default(uuid())
-  firstName String
-  lastName  String
-  title     String?
-  phone     String?
-  email     String?
-  salary    Decimal  @default(0)
-   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-} 
-
-// 🔑 LİSANSLAR
-model License {
-  id        String   @id @default(uuid())
-  key       String   @unique
-  owner     String
-  isActive  Boolean  @default(true)
-  expiresAt DateTime?
-  createdAt DateTime @default(now())
-}
-
-// 💰 KASA & BANKA HESAPLARI
+// 💰 FİNANS
 model FinancialAccount {
-  id        String        @id @default(uuid())
-  name      String        // Örn: "Merkez Kasa", "Ziraat Bankası"
-  type      AccountType   @default(CASH)
-  balance   Decimal       @default(0)
-  currency  String        @default("TRY")
-  iban      String?       
-   
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-
-  // İlişkiler
+  id           String        @id @default(uuid())
+  name         String
+  type         AccountType   @default(CASH)
+  balance      Decimal       @default(0)
+  currency     String        @default("TRY")
+  iban         String?       
   transactions Transaction[]
   expenses     Expense[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
-// 💸 PARA HAREKETLERİ (Tahsilat/Ödeme)
 model Transaction {
   id          String          @id @default(uuid())
   amount      Decimal
@@ -194,19 +253,32 @@ model Transaction {
   description String?
   category    String?
   date        DateTime        @default(now())
-
-  // Hangi kasaya/bankaya bağlı?
-  account     FinancialAccount? @relation(fields: [accountId], references: [id])
   accountId   String?
-
-  // Hangi firmayla ilgili?
-  company     Company?          @relation(fields: [companyId], references: [id])
+  account     FinancialAccount? @relation(fields: [accountId], references: [id])
   companyId   String?
-
-  createdAt   DateTime          @default(now())
+  company     Company?        @relation(fields: [companyId], references: [id])
+  createdAt   DateTime        @default(now())
 }
 
-// ⚙️ GENEL AYARLAR
+model Expense {
+  id          String           @id @default(uuid())
+  description String
+  amount      Float
+  date        DateTime         @default(now())
+  categoryId  String
+  category    ExpenseCategory  @relation(fields: [categoryId], references: [id])
+  accountId   String
+  account     FinancialAccount @relation(fields: [accountId], references: [id])
+  createdAt   DateTime         @default(now())
+}
+
+model ExpenseCategory {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+}
+
 model Settings {
   id          String   @id @default(uuid())
   companyName String
@@ -217,37 +289,30 @@ model Settings {
   iban        String?
   logoUrl     String?
   terms       String?
-   
   updatedAt   DateTime @updatedAt
 }
 
-// 📂 GİDER KATEGORİLERİ
-model ExpenseCategory {
-  id        String    @id @default(uuid())
-  name      String    @unique
-  expenses  Expense[]
-  createdAt DateTime  @default(now())
+model Employee {
+  id        String   @id @default(uuid())
+  firstName String
+  lastName  String
+  title     String?
+  phone     String?
+  email     String?
+  salary    Decimal  @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-// 🧾 GİDERLER (Genel Harcamalar)
-model Expense {
-  id          String   @id @default(uuid())
-  description String
-  amount      Float
-  date        DateTime @default(now())
-   
-  // Kategori İlişkisi
-  categoryId  String
-  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
-
-  // Kasa/Banka İlişkisi
-  accountId   String
-  account     FinancialAccount @relation(fields: [accountId], references: [id])
-
-  createdAt   DateTime @default(now())
+model License {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  owner     String
+  isActive  Boolean  @default(true)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
 }
 
-// 📌 ENUMLAR
 enum AccountType {
   CASH
   BANK
